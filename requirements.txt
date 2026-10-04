@@ -1,0 +1,5 @@
+pyserial
+# Camera runtime on Raspberry Pi OS: install python3-picamera2 and
+# python3-opencv with apt. Use a venv with --system-site-packages.
+# OpenCV and its NumPy dependency are only used by the real camera publisher.
+# No pip Picamera2 dependency: it requires Raspberry Pi OS/libcamera packages.
