@@ -9,7 +9,7 @@ import time
 
 def validate():
     root = Path(__file__).parent
-    for path in root.rglob('*.py'):
+    for path in (*root.glob('*.py'), *(root / 'src').rglob('*.py')):
         source = path.read_text(encoding='utf-8-sig')
         compile(source, str(path), 'exec')
         tree = ast.parse(source)

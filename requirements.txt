@@ -1,5 +1,7 @@
 pyserial
-# Camera runtime on Raspberry Pi OS: install python3-picamera2 and
-# python3-opencv with apt. Use a venv with --system-site-packages.
-# OpenCV and its NumPy dependency are only used by the real camera publisher.
+# Camera and LaneDetection runtime on Raspberry Pi OS: install
+# python3-picamera2, python3-opencv and python3-numpy with apt.
+# Use a venv with --system-site-packages to expose those system packages.
+# Hardware-free Windows validation requires NumPy and OpenCV, e.g.
+# pip install numpy opencv-python
 # No pip Picamera2 dependency: it requires Raspberry Pi OS/libcamera packages.
