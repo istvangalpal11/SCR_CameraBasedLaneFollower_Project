@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2019, Bosch Engineering Center Cluj and BFMC organizers
+# Copyright (c) 2019, Bosch Engineering Center Cluj and BFMC organizers
 # All rights reserved.
 
 # Redistribution and use in source and binary forms, with or without
@@ -29,14 +29,15 @@
 import threading
 import numpy as np
 from src.algorithms.LaneDetection.utils.img_codec import ImgCodecMixin
+from src.algorithms.LaneDetection.utils.preprocessing import PreprocessingMixin
 from src.templates.threadwithstop import ThreadWithStop
 from src.utils.messages.allMessages import serialCamera, LaneControl, LaneActuation
 from src.utils.messages.messageHandlerSender import messageHandlerSender
 from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
 
 
-class threadLaneDetection(ThreadWithStop, ImgCodecMixin):
-    """Phase 2 camera decoding shell. No lane analysis or steering calculation."""
+class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
+    """Phase 3.1 preprocessing shell. No lane search or steering calculation."""
     def __init__(self, queuesList):
         super().__init__(pause=0.01)
         self.lane_enabled = False
@@ -52,6 +53,8 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin):
         self._decode_error_active = False
         self._shape_error_active = False
         self._first_decoded_frame = True
+        self._preprocessing_error_active = False
+        self._first_preprocessed_frame = True
         self._rx_thread = threading.Thread(target=self._camera_rx_loop, daemon=True)
 
     def _camera_rx_loop(self):
@@ -121,7 +124,24 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin):
         if self._first_decoded_frame:
             print('[LANE] First camera frame decoded successfully: 512x270 BGR', flush=True)
             self._first_decoded_frame = False
-        # Phase 2 ends at frame_bgr. No image analysis or actuation here.
+        try:
+            binary_bev = self.preprocess_frame_bgr(frame_bgr)
+            if (not isinstance(binary_bev, np.ndarray)
+                    or binary_bev.ndim != 2 or binary_bev.shape != (270, 512)
+                    or binary_bev.dtype != np.uint8
+                    or not np.all((binary_bev == 0) | (binary_bev == 1))):
+                raise ValueError('Expected a 270x512 uint8 binary BEV with values 0/1')
+        except Exception as exc:
+            if not self._preprocessing_error_active:
+                print(f'[LANE][ERROR] Frame preprocessing failed: {exc}', flush=True)
+            self._preprocessing_error_active = True
+            return
+        self._preprocessing_error_active = False
+        if self._first_preprocessed_frame:
+            print('[LANE] First frame preprocessing completed successfully: '
+                  '512x270 binary BEV', flush=True)
+            self._first_preprocessed_frame = False
+        # Phase 3.1 ends at binary_bev. No lane search or actuation here.
 
     def run(self):
         self._rx_thread.start()
@@ -134,5 +154,3 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin):
             self.controlSubscriber.unsubscribe()
             self._rx_stop.set()
             self._rx_thread.join(timeout=1)
-
-
