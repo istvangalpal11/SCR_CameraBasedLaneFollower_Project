@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 .validation-env/
 .validation-wheels/
+/notebooks/test_images/
