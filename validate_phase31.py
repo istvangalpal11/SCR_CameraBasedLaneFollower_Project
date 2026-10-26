@@ -1,4 +1,4 @@
-﻿"""Phase 3.1 preprocessing and spawned Gateway integration, without hardware."""
+"""Phase 3.1 preprocessing and spawned Gateway integration, without hardware."""
 import base64
 from contextlib import redirect_stdout
 import importlib.util
@@ -64,9 +64,26 @@ def reference_check(images):
                 top_y_frac=old_tuning.BEV_BLACK_TRAPEZOID_TOP_Y_FRAC,
                 bottom_y_frac=old_tuning.BEV_BLACK_TRAPEZOID_BOTTOM_Y_FRAC,
                 center_x_frac=old_tuning.BEV_BLACK_TRAPEZOID_CENTER_X_FRAC)
-        expected = original._dynamic_percentile_binary(bev)
-        assert np.array_equal(current.preprocess_frame_bgr(image), expected)
-    print('PASS: BFMC global-path output and copied tuning values match reference', flush=True)
+        current_bev, _, _ = current.get_birdseye_responsive_gray(
+            gray, top_width_factor=tuning.BEV_SRC_TOP_WIDTH_FACTOR,
+            bottom_width_factor=tuning.BEV_SRC_BOTTOM_WIDTH_FACTOR,
+            bottom_offset_factor=tuning.BEV_SRC_BOTTOM_OFFSET_FACTOR,
+            horizon_factor=tuning.BEV_SRC_HORIZON_FACTOR,
+            empty_margins=tuning.BEV_DST_EMPTY_MARGINS)
+        if tuning.BEV_BLACK_TRAPEZOID_ENABLE:
+            current_bev = current.apply_bev_black_trapezoid(
+                current_bev, top_width_frac=tuning.BEV_BLACK_TRAPEZOID_TOP_WIDTH_FRAC,
+                bottom_width_frac=tuning.BEV_BLACK_TRAPEZOID_BOTTOM_WIDTH_FRAC,
+                top_y_frac=tuning.BEV_BLACK_TRAPEZOID_TOP_Y_FRAC,
+                bottom_y_frac=tuning.BEV_BLACK_TRAPEZOID_BOTTOM_Y_FRAC,
+                center_x_frac=tuning.BEV_BLACK_TRAPEZOID_CENTER_X_FRAC)
+        assert np.array_equal(current_bev, bev)
+        assert np.array_equal(current._apply_tophat_prethreshold(bev),
+                              original._apply_tophat_prethreshold(bev))
+        probe = (bev > 127).astype(np.uint8)
+        assert np.array_equal(current._apply_threshold_morphology(probe),
+                              original._apply_threshold_morphology(probe))
+    print('PASS: Unchanged BFMC BEV, Top-Hat, morphology and active tuning match reference', flush=True)
 
 
 def validate_preprocessing():
@@ -75,9 +92,10 @@ def validate_preprocessing():
     for index, image in enumerate(images):
         binary = pipeline.preprocess_frame_bgr(image)
         assert_binary(binary)
-        assert pipeline._last_threshold_debug['mode'] == 'global'
+        assert pipeline._last_threshold_debug['mode'] == 'otsu'
         assert pipeline._last_threshold_debug['tophat'] is True
-        assert pipeline._last_threshold_debug['global_t'] >= tuning.THRESH_TOPHAT_MIN_THRESHOLD
+        assert np.isfinite(pipeline._last_threshold_debug['otsu_t'])
+        assert 0 <= pipeline._last_threshold_debug['otsu_t'] <= 255
         if index == 0:
             assert set(np.unique(binary)) == {0, 1}, 'Road fixture must contain foreground and background'
         if index == 1:
@@ -94,10 +112,27 @@ def validate_preprocessing():
     transformed = cv2.perspectiveTransform(src[None, :, :], matrix)[0]
     assert np.allclose(transformed, dst, atol=1e-3)
     assert np.allclose(cv2.perspectiveTransform(dst[None, :, :], inverse)[0], src, atol=1e-3)
-    assert_binary(pipeline._dynamic_percentile_binary(bev))
+    class ThresholdObserver(PreprocessingMixin):
+        def _apply_tophat_prethreshold(self, image):
+            self.prethreshold = super()._apply_tophat_prethreshold(image)
+            return self.prethreshold
+
+        def _apply_threshold_morphology(self, binary):
+            self.raw_binary = binary.copy()
+            return super()._apply_threshold_morphology(binary)
+
+    observer = ThresholdObserver()
+    cleaned = observer._otsu_binary(bev)
+    selected, expected_raw = cv2.threshold(
+        observer.prethreshold, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    assert observer._last_threshold_debug['otsu_t'] == selected
+    assert np.array_equal(observer.raw_binary, (expected_raw > 0).astype(np.uint8))
+    assert np.array_equal(cleaned, pipeline._apply_threshold_morphology(observer.raw_binary))
+    assert np.array_equal(observer.prethreshold, pipeline._apply_tophat_prethreshold(bev))
+    assert_binary(cleaned)
     reference_check(images)
     print('PASS: grayscale / preprocessing pipeline and Bird\'s-Eye-View transform', flush=True)
-    print('PASS: adaptive threshold, morphology and uint8 0/1 binary output', flush=True)
+    print('PASS: whole-image Otsu, unchanged Top-Hat/morphology and uint8 0/1 binary output', flush=True)
     print('PASS: blank and altered-illumination frames handled safely', flush=True)
 
 

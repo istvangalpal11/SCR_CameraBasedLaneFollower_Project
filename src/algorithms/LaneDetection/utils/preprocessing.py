@@ -1,4 +1,4 @@
-﻿# preprocessing.py
+# preprocessing.py
 import cv2, numpy as np
 
 from src.algorithms.LaneDetection.utils import tuning as lane_tuning
@@ -93,60 +93,18 @@ class PreprocessingMixin:
         tophat = cv2.morphologyEx(work, cv2.MORPH_TOPHAT, kernel)
         return np.clip(tophat, 0, 255).astype(np.uint8)
 
-    def _threshold_percentile(self, values, pct):
-        vals = np.asarray(values)
-        if vals.size == 0:
-            return 0.0
-
-        if bool(getattr(lane_tuning, "THRESH_TOPHAT_ENABLE", False)):
-            stats_min = float(getattr(lane_tuning, "THRESH_TOPHAT_STATS_MIN_VALUE", 0.0))
-            min_samples = max(1, int(getattr(lane_tuning, "THRESH_TOPHAT_STATS_MIN_SAMPLES", 100)))
-            if stats_min > 0:
-                filtered = vals[vals >= stats_min]
-                if filtered.size >= min_samples:
-                    vals = filtered
-
-        if vals.size == 0:
-            return 0.0
-
-        return float(np.percentile(vals, pct))
-
-    def _apply_tophat_threshold_floor(self, threshold_value):
-        t = float(threshold_value)
-        if bool(getattr(lane_tuning, "THRESH_TOPHAT_ENABLE", False)):
-            t = max(t, float(getattr(lane_tuning, "THRESH_TOPHAT_MIN_THRESHOLD", 20.0)))
-        return float(np.clip(t, 0, 255))
-
-    # dinamic threshold
-    def _dynamic_percentile_binary(self, gray_u8, pct=None, offset=None, roi_top=None):
+    def _otsu_binary(self, gray_u8):
+        """Existing Top-Hat -> tested whole-image Otsu -> existing morphology."""
         if gray_u8.dtype != np.uint8:
             gray_u8 = np.clip(gray_u8, 0, 255).astype(np.uint8)
-
-        thresh_u8 = self._apply_tophat_prethreshold(gray_u8)
-
-        pct = lane_tuning.THRESH_PERCENTILE if pct is None else pct
-        offset = lane_tuning.THRESH_OFFSET if offset is None else offset
-        roi_top = lane_tuning.THRESH_ROI_TOP_FRAC if roi_top is None else roi_top
-
-        h, _ = thresh_u8.shape[:2]
-        y0 = int(np.clip(h * float(roi_top), 0, max(h - 1, 0)))
-
-        roi = thresh_u8[y0:, :]
-        blur_k = max(3, int(getattr(lane_tuning, "THRESH_GAUSSIAN_BLUR_K", 5)))
-        if blur_k % 2 == 0:
-            blur_k += 1
-        if bool(getattr(lane_tuning, "THRESH_TOPHAT_ENABLE", False)):
-            roi_blur = roi
-        else:
-            roi_blur = cv2.GaussianBlur(roi, (blur_k, blur_k), 0)
-
-        t = self._threshold_percentile(roi_blur, pct) + offset
-        t = self._apply_tophat_threshold_floor(t)
-        binary = (thresh_u8 >= t).astype(np.uint8)
+        prethreshold_u8 = self._apply_tophat_prethreshold(gray_u8)
+        threshold, binary = cv2.threshold(
+            prethreshold_u8, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        binary = (binary > 0).astype(np.uint8)
         binary = self._apply_threshold_morphology(binary)
         self._last_threshold_debug = {
-            "mode": "global",
-            "global_t": t,
+            "mode": "otsu",
+            "otsu_t": float(threshold),
             "tophat": bool(getattr(lane_tuning, "THRESH_TOPHAT_ENABLE", False)),
         }
         return binary
@@ -199,7 +157,7 @@ class PreprocessingMixin:
         return out
 
     def preprocess_frame_bgr(self, frame_bgr):
-        """BFMC initial/global path, ending before any lane-pixel search."""
+        """BFMC preprocessing with whole-image Otsu, ending before lane search."""
         gray_input = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         bevGray, _, _ = self.get_birdseye_responsive_gray(
             gray_input,
@@ -218,6 +176,5 @@ class PreprocessingMixin:
                 bottom_y_frac=lane_tuning.BEV_BLACK_TRAPEZOID_BOTTOM_Y_FRAC,
                 center_x_frac=lane_tuning.BEV_BLACK_TRAPEZOID_CENTER_X_FRAC,
             )
-        # No previous fits exist yet. Use BFMC's original global fallback.
         # The original runtime also leaves apply_roi_mask disabled.
-        return self._dynamic_percentile_binary(bevGray)
+        return self._otsu_binary(bevGray)
