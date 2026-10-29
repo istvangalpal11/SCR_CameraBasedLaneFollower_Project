@@ -3,3 +3,4 @@ __pycache__/
 .validation-env/
 .validation-wheels/
 /notebooks/test_images/
+.venv
