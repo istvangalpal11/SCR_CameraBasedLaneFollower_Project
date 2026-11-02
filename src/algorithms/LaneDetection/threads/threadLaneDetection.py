@@ -30,6 +30,7 @@ import threading
 import numpy as np
 from src.algorithms.LaneDetection.utils.img_codec import ImgCodecMixin
 from src.algorithms.LaneDetection.utils.preprocessing import PreprocessingMixin
+from src.algorithms.LaneDetection.utils import tuning as lane_tuning
 from src.templates.threadwithstop import ThreadWithStop
 from src.utils.messages.allMessages import serialCamera, LaneControl, LaneActuation
 from src.utils.messages.messageHandlerSender import messageHandlerSender
@@ -127,10 +128,10 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
         try:
             binary_bev = self.preprocess_frame_bgr(frame_bgr)
             if (not isinstance(binary_bev, np.ndarray)
-                    or binary_bev.ndim != 2 or binary_bev.shape != (270, 512)
+                    or binary_bev.ndim != 2 or binary_bev.shape != (lane_tuning.BEV_OUTPUT_HEIGHT, lane_tuning.BEV_OUTPUT_WIDTH)
                     or binary_bev.dtype != np.uint8
                     or not np.all((binary_bev == 0) | (binary_bev == 1))):
-                raise ValueError('Expected a 270x512 uint8 binary BEV with values 0/1')
+                raise ValueError(f'Expected a {lane_tuning.BEV_OUTPUT_HEIGHT}x{lane_tuning.BEV_OUTPUT_WIDTH} uint8 binary BEV with values 0/1')
         except Exception as exc:
             if not self._preprocessing_error_active:
                 print(f'[LANE][ERROR] Frame preprocessing failed: {exc}', flush=True)
@@ -139,7 +140,7 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
         self._preprocessing_error_active = False
         if self._first_preprocessed_frame:
             print('[LANE] First frame preprocessing completed successfully: '
-                  '512x270 binary BEV', flush=True)
+                  f'{lane_tuning.BEV_OUTPUT_WIDTH}x{lane_tuning.BEV_OUTPUT_HEIGHT} binary BEV', flush=True)
             self._first_preprocessed_frame = False
         # Phase 3.1 ends at binary_bev. No lane search or actuation here.
 

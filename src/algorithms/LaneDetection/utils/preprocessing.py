@@ -213,17 +213,35 @@ class PreprocessingMixin:
             return out, points
         return out
 
+    def _draw_bev_trapezoid_debug(self, image, src_points):
+        """Draw actual warp source points on a display-only BGR copy."""
+        overlay = (cv2.cvtColor(image.copy(), cv2.COLOR_GRAY2BGR)
+                   if image.ndim == 2 else image.copy())
+        polygon = np.rint(src_points).astype(np.int32)
+        cv2.polylines(overlay, [polygon], True, (0, 255, 255), 2)
+        for number, point in enumerate(polygon, 1):
+            x, y = map(int, point)
+            cv2.circle(overlay, (x, y), 4, (0, 0, 255), -1)
+            label_x = max(2, min(x + 5, overlay.shape[1] - 30))
+            label_y = max(15, min(y - 6, overlay.shape[0] - 5))
+            cv2.putText(overlay, f'P{number}', (label_x, label_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+        return overlay
+
     def preprocess_frame_bgr(self, frame_bgr):
         """BFMC preprocessing with upper/lower Otsu, ending before lane search."""
         gray_input = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-        bevGray, _, _ = self.get_birdseye_responsive_gray(
+        bevGray, _, _, src_points, _ = self.get_birdseye_responsive_gray(
             gray_input,
             top_width_factor=lane_tuning.BEV_SRC_TOP_WIDTH_FACTOR,
             bottom_width_factor=lane_tuning.BEV_SRC_BOTTOM_WIDTH_FACTOR,
             bottom_offset_factor=lane_tuning.BEV_SRC_BOTTOM_OFFSET_FACTOR,
             horizon_factor=lane_tuning.BEV_SRC_HORIZON_FACTOR,
             empty_margins=lane_tuning.BEV_DST_EMPTY_MARGINS,
+            return_points=True,
+            output_size=(lane_tuning.BEV_OUTPUT_WIDTH, lane_tuning.BEV_OUTPUT_HEIGHT),
         )
+        self._last_bev_trapezoid_debug = self._draw_bev_trapezoid_debug(gray_input, src_points)
         if lane_tuning.BEV_BLACK_TRAPEZOID_ENABLE:
             bevGray = self.apply_bev_black_trapezoid(
                 bevGray,

@@ -25,7 +25,7 @@ def road_image(bright=False):
 
 def assert_binary(binary):
     assert isinstance(binary, np.ndarray)
-    assert binary.shape == (270, 512) and binary.ndim == 2
+    assert binary.shape == (tuning.BEV_OUTPUT_HEIGHT, tuning.BEV_OUTPUT_WIDTH) and binary.ndim == 2
     assert binary.dtype == np.uint8
     assert np.all((binary == 0) | (binary == 1))
 
@@ -47,7 +47,7 @@ def reference_check(images):
     original = old_code.PreprocessingMixin()
     current = PreprocessingMixin()
     for name, value in vars(tuning).items():
-        if name.startswith(('BEV_', 'THRESH_')):
+        if name.startswith(('BEV_', 'THRESH_')) and name not in ('BEV_OUTPUT_WIDTH', 'BEV_OUTPUT_HEIGHT'):
             assert value == getattr(old_tuning, name), name
     for image in images:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -154,8 +154,14 @@ def validate_preprocessing():
     pipeline = PreprocessingMixin()
     images = [road_image(), np.zeros((270, 512, 3), dtype=np.uint8), road_image(True)]
     for index, image in enumerate(images):
+        unchanged_input = image.copy()
         binary = pipeline.preprocess_frame_bgr(image)
         assert_binary(binary)
+        assert np.array_equal(image, unchanged_input)
+        overlay = pipeline._last_bev_trapezoid_debug
+        assert overlay.shape == (270, 512, 3) and overlay.dtype == np.uint8
+        assert np.any(np.all(overlay == (0, 255, 255), axis=2))
+        assert np.any(np.all(overlay == (0, 0, 255), axis=2))
         assert pipeline._last_threshold_debug['mode'] == 'regional_otsu_vertical'
         assert pipeline._last_threshold_debug['tophat'] is True
         for key in ('top_t', 'bottom_t'):
@@ -172,8 +178,9 @@ def validate_preprocessing():
         bottom_width_factor=tuning.BEV_SRC_BOTTOM_WIDTH_FACTOR,
         bottom_offset_factor=tuning.BEV_SRC_BOTTOM_OFFSET_FACTOR,
         horizon_factor=tuning.BEV_SRC_HORIZON_FACTOR,
-        empty_margins=tuning.BEV_DST_EMPTY_MARGINS, return_points=True)
-    assert bev.shape == (270, 512) and bev.dtype == np.uint8
+        empty_margins=tuning.BEV_DST_EMPTY_MARGINS, return_points=True,
+        output_size=(tuning.BEV_OUTPUT_WIDTH, tuning.BEV_OUTPUT_HEIGHT))
+    assert bev.shape == (tuning.BEV_OUTPUT_HEIGHT, tuning.BEV_OUTPUT_WIDTH) and bev.dtype == np.uint8
     assert np.array_equal(src, np.float32([[13, 270], [128, 191], [384, 191], [499, 270]]))
     transformed = cv2.perspectiveTransform(src[None, :, :], matrix)[0]
     assert np.allclose(transformed, dst, atol=1e-3)

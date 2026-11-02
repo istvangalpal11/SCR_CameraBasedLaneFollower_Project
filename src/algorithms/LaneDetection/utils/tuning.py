@@ -6,6 +6,9 @@ BEV_SRC_BOTTOM_OFFSET_FACTOR        = 0.0    # Source bottom inset as image-heig
 BEV_SRC_HORIZON_FACTOR              = 0.71   # Source top position as image-height fraction
 BEV_DST_EMPTY_MARGINS               = 0.00   # Destination side margin as output-width fraction
 
+BEV_OUTPUT_WIDTH = 400   # Production BEV destination width in pixels
+BEV_OUTPUT_HEIGHT = 400  # Production BEV destination height in pixels
+
 OTSU_VERTICAL_SPLIT_FRAC            = 0.5    # Upper-region height fraction
 OTSU_TOP_OFFSET                     = 0      # Manual offset added to upper Otsu threshold
 OTSU_BOTTOM_OFFSET                  = 0      # Manual offset added to lower Otsu threshold
