@@ -125,6 +125,23 @@ class PreprocessingMixin:
         # Match OpenCV THRESH_BINARY's strict comparison, preserving zero-offset behavior.
         top_binary = prethreshold_u8[:split_y, :] > top_threshold
         bottom_binary = prethreshold_u8[split_y:, :] > bottom_threshold
+        top_threshold_before_auto = top_threshold
+        top_density_initial = float(np.count_nonzero(top_binary) / top_binary.size)
+        top_density = top_density_initial
+        bottom_density = float(np.count_nonzero(bottom_binary) / bottom_binary.size)
+        max_ratio = float(lane_tuning.OTSU_TOP_MAX_TO_BOTTOM_RATIO)
+        min_bottom_density = float(lane_tuning.OTSU_MIN_BOTTOM_FOREGROUND_RATIO)
+        max_steps = max(0, int(lane_tuning.OTSU_TOP_ADJUST_MAX_STEPS))
+        auto_steps = 0
+        while (lane_tuning.OTSU_TOP_AUTO_ADJUST_ENABLE
+               and bottom_density >= min_bottom_density
+               and top_density > bottom_density * max_ratio
+               and auto_steps < max_steps and top_threshold < 255):
+            step = max(1, round(top_threshold * lane_tuning.OTSU_TOP_ADJUST_PERCENT))
+            top_threshold = float(np.clip(top_threshold + step, 0, 255))
+            top_binary = prethreshold_u8[:split_y, :] > top_threshold
+            top_density = float(np.count_nonzero(top_binary) / top_binary.size)
+            auto_steps += 1
         binary = np.vstack((top_binary, bottom_binary)).astype(np.uint8)
         binary = self._apply_threshold_morphology(binary)
         self._last_threshold_debug = {
@@ -135,6 +152,14 @@ class PreprocessingMixin:
             "bottom_offset": bottom_offset,
             "top_t": float(top_threshold),
             "bottom_t": float(bottom_threshold),
+            "top_threshold_before_auto": top_threshold_before_auto,
+            "top_auto_steps": auto_steps,
+            "top_auto_added_total": top_threshold - top_threshold_before_auto,
+            "top_density_initial": top_density_initial,
+            "top_density_final": top_density,
+            "bottom_density": bottom_density,
+            "max_top_to_bottom_ratio": max_ratio,
+            "min_bottom_foreground_ratio": min_bottom_density,
             "split_y": split_y,
             "split_frac": split_frac,
             "tophat": bool(getattr(lane_tuning, "THRESH_TOPHAT_ENABLE", False)),

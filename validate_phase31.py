@@ -86,7 +86,71 @@ def reference_check(images):
     print('PASS: Unchanged BFMC BEV, Top-Hat, morphology and active tuning match reference', flush=True)
 
 
+def validate_top_auto_adjust():
+    from unittest.mock import patch
+
+    class ThresholdProbe(PreprocessingMixin):
+        def _apply_tophat_prethreshold(self, image):
+            return image  # Isolate the threshold stage with deterministic prepared data.
+
+        def _apply_threshold_morphology(self, binary):
+            self.raw = binary.copy()
+            self.calls = getattr(self, 'calls', 0) + 1
+            return super()._apply_threshold_morphology(binary)
+
+    def run(image, **settings):
+        probe = ThresholdProbe()
+        options = dict(OTSU_VERTICAL_SPLIT_FRAC=0.25, OTSU_TOP_OFFSET=0,
+                       OTSU_BOTTOM_OFFSET=0, OTSU_TOP_AUTO_ADJUST_ENABLE=True,
+                       OTSU_TOP_MAX_TO_BOTTOM_RATIO=2.0,
+                       OTSU_MIN_BOTTOM_FOREGROUND_RATIO=0.005,
+                       OTSU_TOP_ADJUST_PERCENT=0.05, OTSU_TOP_ADJUST_MAX_STEPS=4)
+        options.update(settings)
+        with patch.multiple(tuning, **options), patch.object(cv2, 'threshold', wraps=cv2.threshold) as otsu:
+            result = probe._otsu_binary(image)
+        debug = probe._last_threshold_debug
+        assert otsu.call_count == 2  # Once per region, never inside the loop.
+        assert probe.calls == 1
+        assert result.shape == image.shape and result.dtype == np.uint8
+        assert set(np.unique(result)) <= {0, 1}
+        assert 0 <= debug['top_auto_steps'] <= options['OTSU_TOP_ADJUST_MAX_STEPS']
+        assert debug['top_t'] >= debug['top_threshold_before_auto']
+        assert debug['bottom_t'] == np.clip(debug['bottom_otsu_raw'] + options['OTSU_BOTTOM_OFFSET'], 0, 255)
+        return probe, debug
+
+    # Unequal regions: top has fewer white pixels but higher foreground density.
+    image = np.zeros((100, 100), np.uint8)
+    image[:25, :50] = 10
+    image[:25, 50:] = 11
+    image[25:, :20] = 200
+    probe, debug = run(image)
+    assert debug['top_auto_steps'] == 1
+    assert debug['top_density_initial'] == 0.5 and debug['bottom_density'] == 0.2
+    assert debug['top_t'] == 11 and debug['top_density_final'] == 0
+    # Positive threshold: 5% of 100 gives an increment of five.
+    image[:25, :50] = 100
+    image[:25, 50:] = 101
+    _, debug = run(image)
+    assert debug['top_t'] == 105 and debug['top_auto_added_total'] == 5
+    # Threshold zero still advances by one and respects the hard four-step cap.
+    image[:25] = 100
+    _, debug = run(image)
+    assert debug['top_auto_steps'] == 4 and debug['top_t'] == 4
+    for settings in ({'OTSU_TOP_AUTO_ADJUST_ENABLE': False},
+                     {'OTSU_TOP_ADJUST_MAX_STEPS': 0},
+                     {'OTSU_MIN_BOTTOM_FOREGROUND_RATIO': 0.3}):
+        _, debug = run(image, **settings)
+        assert debug['top_auto_steps'] == 0
+    image[:25] = 0  # Lower upper density must never trigger correction.
+    _, debug = run(image)
+    assert debug['top_auto_steps'] == 0
+    _, debug = run(np.zeros((100, 100), np.uint8))
+    assert debug['top_auto_steps'] == 0 and debug['bottom_density'] == 0
+    print('PASS: bounded upper density correction, percentage steps, fixed bottom and single morphology', flush=True)
+
+
 def validate_preprocessing():
+    validate_top_auto_adjust()
     pipeline = PreprocessingMixin()
     images = [road_image(), np.zeros((270, 512, 3), dtype=np.uint8), road_image(True)]
     for index, image in enumerate(images):
@@ -131,9 +195,13 @@ def validate_preprocessing():
         observer.prethreshold[:split_y], 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     bottom_t, bottom_raw = cv2.threshold(
         observer.prethreshold[split_y:], 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    assert observer._last_threshold_debug['top_t'] == top_t
-    assert observer._last_threshold_debug['bottom_t'] == bottom_t
-    assert np.array_equal(observer.raw_binary, (np.vstack((top_raw, bottom_raw)) > 0).astype(np.uint8))
+    debug = observer._last_threshold_debug
+    assert debug['top_otsu_raw'] == top_t
+    assert debug['bottom_otsu_raw'] == bottom_t
+    assert debug['bottom_t'] == np.clip(bottom_t + tuning.OTSU_BOTTOM_OFFSET, 0, 255)
+    expected = np.vstack((observer.prethreshold[:split_y] > debug['top_t'],
+                          observer.prethreshold[split_y:] > debug['bottom_t'])).astype(np.uint8)
+    assert np.array_equal(observer.raw_binary, expected)
     assert observer.morphology_calls == 1
     assert np.array_equal(cleaned, pipeline._apply_threshold_morphology(observer.raw_binary))
     assert np.array_equal(observer.prethreshold, pipeline._apply_tophat_prethreshold(bev))
