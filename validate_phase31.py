@@ -92,10 +92,12 @@ def validate_preprocessing():
     for index, image in enumerate(images):
         binary = pipeline.preprocess_frame_bgr(image)
         assert_binary(binary)
-        assert pipeline._last_threshold_debug['mode'] == 'otsu'
+        assert pipeline._last_threshold_debug['mode'] == 'regional_otsu_vertical'
         assert pipeline._last_threshold_debug['tophat'] is True
-        assert np.isfinite(pipeline._last_threshold_debug['otsu_t'])
-        assert 0 <= pipeline._last_threshold_debug['otsu_t'] <= 255
+        for key in ('top_t', 'bottom_t'):
+            assert np.isfinite(pipeline._last_threshold_debug[key])
+            assert 0 <= pipeline._last_threshold_debug[key] <= 255
+        assert 1 <= pipeline._last_threshold_debug['split_y'] < binary.shape[0]
         if index == 0:
             assert set(np.unique(binary)) == {0, 1}, 'Road fixture must contain foreground and background'
         if index == 1:
@@ -119,20 +121,39 @@ def validate_preprocessing():
 
         def _apply_threshold_morphology(self, binary):
             self.raw_binary = binary.copy()
+            self.morphology_calls = getattr(self, 'morphology_calls', 0) + 1
             return super()._apply_threshold_morphology(binary)
 
     observer = ThresholdObserver()
     cleaned = observer._otsu_binary(bev)
-    selected, expected_raw = cv2.threshold(
-        observer.prethreshold, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    assert observer._last_threshold_debug['otsu_t'] == selected
-    assert np.array_equal(observer.raw_binary, (expected_raw > 0).astype(np.uint8))
+    split_y = observer._last_threshold_debug['split_y']
+    top_t, top_raw = cv2.threshold(
+        observer.prethreshold[:split_y], 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    bottom_t, bottom_raw = cv2.threshold(
+        observer.prethreshold[split_y:], 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    assert observer._last_threshold_debug['top_t'] == top_t
+    assert observer._last_threshold_debug['bottom_t'] == bottom_t
+    assert np.array_equal(observer.raw_binary, (np.vstack((top_raw, bottom_raw)) > 0).astype(np.uint8))
+    assert observer.morphology_calls == 1
     assert np.array_equal(cleaned, pipeline._apply_threshold_morphology(observer.raw_binary))
     assert np.array_equal(observer.prethreshold, pipeline._apply_tophat_prethreshold(bev))
     assert_binary(cleaned)
+    # Threshold-only edge checks, independent of the optional historical comparison.
+    from unittest.mock import patch
+    for shape in ((400, 400), (271, 650), (2, 7)):
+        for fraction in (-1.0, 0.5, 2.0):
+            probe = ThresholdObserver()
+            image = np.zeros(shape, dtype=np.uint8)
+            with patch.object(tuning, 'OTSU_VERTICAL_SPLIT_FRAC', fraction):
+                result = probe._otsu_binary(image)
+            assert result.shape == shape and result.dtype == np.uint8
+            assert not np.any(result)
+            assert 1 <= probe._last_threshold_debug['split_y'] < shape[0]
+            assert probe.morphology_calls == 1
+    print('PASS: regional Otsu thresholds, recombination, split bounds and single morphology pass', flush=True)
     reference_check(images)
     print('PASS: grayscale / preprocessing pipeline and Bird\'s-Eye-View transform', flush=True)
-    print('PASS: whole-image Otsu, unchanged Top-Hat/morphology and uint8 0/1 binary output', flush=True)
+    print('PASS: vertical regional Otsu, unchanged Top-Hat/morphology and uint8 0/1 binary output', flush=True)
     print('PASS: blank and altered-illumination frames handled safely', flush=True)
 
 

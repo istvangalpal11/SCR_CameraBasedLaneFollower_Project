@@ -7,7 +7,7 @@ from src.algorithms.LaneDetection.utils.preprocessing import PreprocessingMixin
 _warned = set()
 
 
-def custom_bev_points(gray_img, configuration):
+def custom_bev_points(gray_img, configuration, output_size=None):
     """Return validated custom src/dst, or None to use production unchanged."""
     if not configuration.get('USE_CUSTOM_TEST_BEV', False):
         return None
@@ -34,7 +34,7 @@ def custom_bev_points(gray_img, configuration):
             _, _, _, src, dst = PreprocessingMixin().get_birdseye_responsive_gray(
                 gray_img, top_width_factor=top, bottom_width_factor=bottom,
                 bottom_offset_factor=offset, horizon_factor=horizon,
-                empty_margins=margins, return_points=True)
+                empty_margins=margins, return_points=True, output_size=output_size)
         src = src.copy()
         src[:, 0] += shift  # Translate all four corners by exactly the same amount.
         if src[:, 0].max() <= 0 or src[:, 0].min() >= width:

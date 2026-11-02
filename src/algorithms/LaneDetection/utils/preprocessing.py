@@ -11,7 +11,7 @@ class PreprocessingMixin:
                     bottom_offset_factor=lane_tuning.BEV_SRC_BOTTOM_OFFSET_FACTOR,
                     horizon_factor=lane_tuning.BEV_SRC_HORIZON_FACTOR,
                     empty_margins=lane_tuning.BEV_DST_EMPTY_MARGINS,
-                    return_points=False): # empty space on left/right
+                    return_points=False, output_size=None): # output_size is (width, height)
         if len(gray_img.shape) == 2:
             h, w = gray_img.shape
         else:
@@ -31,17 +31,26 @@ class PreprocessingMixin:
 
         src = np.float32([p1, p2, p3, p4])
 
-        dst_margin = int(w * empty_margins)
+        if output_size is None:
+            out_w, out_h = w, h
+        else:
+            if (not isinstance(output_size, (tuple, list)) or len(output_size) != 2
+                    or any(isinstance(v, (bool, np.bool_))
+                           or not isinstance(v, (int, np.integer)) or v <= 0
+                           for v in output_size)):
+                raise ValueError('output_size must be a pair of positive integer dimensions')
+            out_w, out_h = map(int, output_size)
+        dst_margin = int(out_w * empty_margins)
         dst = np.float32([
-            [dst_margin, h],
+            [dst_margin, out_h],
             [dst_margin, 0],
-            [w - dst_margin, 0],
-            [w - dst_margin, h]
+            [out_w - dst_margin, 0],
+            [out_w - dst_margin, out_h]
         ])
 
         M = cv2.getPerspectiveTransform(src, dst)
         Minv = cv2.getPerspectiveTransform(dst, src)
-        bev_gray = cv2.warpPerspective(gray_img, M, (w, h))
+        bev_gray = cv2.warpPerspective(gray_img, M, (out_w, out_h))
 
         if return_points:
             return bev_gray, M, Minv, src, dst
@@ -94,17 +103,40 @@ class PreprocessingMixin:
         return np.clip(tophat, 0, 255).astype(np.uint8)
 
     def _otsu_binary(self, gray_u8):
-        """Existing Top-Hat -> tested whole-image Otsu -> existing morphology."""
+        """Existing Top-Hat -> upper/lower Otsu -> one full-image morphology pass."""
         if gray_u8.dtype != np.uint8:
             gray_u8 = np.clip(gray_u8, 0, 255).astype(np.uint8)
         prethreshold_u8 = self._apply_tophat_prethreshold(gray_u8)
-        threshold, binary = cv2.threshold(
-            prethreshold_u8, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        binary = (binary > 0).astype(np.uint8)
+        height = prethreshold_u8.shape[0]
+        if height < 2:
+            raise ValueError('Vertical regional Otsu requires at least two image rows')
+        split_frac = float(np.clip(lane_tuning.OTSU_VERTICAL_SPLIT_FRAC, 0.0, 1.0))
+        if not np.isfinite(split_frac):
+            raise ValueError('OTSU_VERTICAL_SPLIT_FRAC must be finite')
+        split_y = max(1, min(height - 1, int(height * split_frac)))
+        top_otsu_raw, _ = cv2.threshold(
+            prethreshold_u8[:split_y, :], 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        bottom_otsu_raw, _ = cv2.threshold(
+            prethreshold_u8[split_y:, :], 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        top_offset = float(lane_tuning.OTSU_TOP_OFFSET)
+        bottom_offset = float(lane_tuning.OTSU_BOTTOM_OFFSET)
+        top_threshold = float(np.clip(top_otsu_raw + top_offset, 0, 255))
+        bottom_threshold = float(np.clip(bottom_otsu_raw + bottom_offset, 0, 255))
+        # Match OpenCV THRESH_BINARY's strict comparison, preserving zero-offset behavior.
+        top_binary = prethreshold_u8[:split_y, :] > top_threshold
+        bottom_binary = prethreshold_u8[split_y:, :] > bottom_threshold
+        binary = np.vstack((top_binary, bottom_binary)).astype(np.uint8)
         binary = self._apply_threshold_morphology(binary)
         self._last_threshold_debug = {
-            "mode": "otsu",
-            "otsu_t": float(threshold),
+            "mode": "regional_otsu_vertical",
+            "top_otsu_raw": float(top_otsu_raw),
+            "bottom_otsu_raw": float(bottom_otsu_raw),
+            "top_offset": top_offset,
+            "bottom_offset": bottom_offset,
+            "top_t": float(top_threshold),
+            "bottom_t": float(bottom_threshold),
+            "split_y": split_y,
+            "split_frac": split_frac,
             "tophat": bool(getattr(lane_tuning, "THRESH_TOPHAT_ENABLE", False)),
         }
         return binary
@@ -157,7 +189,7 @@ class PreprocessingMixin:
         return out
 
     def preprocess_frame_bgr(self, frame_bgr):
-        """BFMC preprocessing with whole-image Otsu, ending before lane search."""
+        """BFMC preprocessing with upper/lower Otsu, ending before lane search."""
         gray_input = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         bevGray, _, _ = self.get_birdseye_responsive_gray(
             gray_input,

@@ -20,12 +20,15 @@ class PreprocessingTester(PreprocessingMixin):
         if not notebook_prepared:
             gray_img = self._notebook_namespace["test_bottom_crop"](gray_img)
         self.observed_gray_for_bev = gray_img.copy()
-        geometry = custom_bev_points(gray_img, self._notebook_namespace)
+        geometry = custom_bev_points(gray_img, self._notebook_namespace,
+                                     output_size=kwargs.get("output_size"))
         if geometry is not None:
             src, dst = geometry
             matrix = cv2.getPerspectiveTransform(src, dst)
             inverse = cv2.getPerspectiveTransform(dst, src)
             height, width = gray_img.shape[:2]
+            if kwargs.get("output_size") is not None:
+                width, height = kwargs["output_size"]
             bev = cv2.warpPerspective(gray_img, matrix, (width, height))
             if kwargs.get('return_points', False):
                 return bev, matrix, inverse, src, dst
