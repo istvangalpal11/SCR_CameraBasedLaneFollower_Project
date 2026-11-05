@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 .validation-env/
 .validation-wheels/
-/notebooks/test_images/
+notebooks/I_test_images_preprocessing/
+notebooks/II_test_images_lane_exctraction/
 .venv

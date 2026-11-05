@@ -28,6 +28,8 @@
 
 import base64
 import time
+from uuid import uuid4
+from src.utils.frame_packet import make_capture_packet, validate_capture_latency_offset
 from queue import Full
 from src.templates.threadwithstop import ThreadWithStop
 from src.utils.messages.allMessages import serialCamera
@@ -35,10 +37,13 @@ from src.utils.messages.messageHandlerSender import messageHandlerSender
 
 
 class threadCamera(ThreadWithStop):
-    def __init__(self, queuesList):
+    def __init__(self, queuesList, capture_latency_offset_ns=0):
         super().__init__()
         self.sender = messageHandlerSender(queuesList, serialCamera)
         self.camera = None
+        self.capture_latency_offset_ns = validate_capture_latency_offset(capture_latency_offset_ns)
+        self.session_id = uuid4().hex
+        self.frame_id = 0
         self.frame_rate = 5
         self._next_frame_t = time.monotonic()
         print('[CAMERA] Initializing camera...', flush=True)
@@ -80,11 +85,19 @@ class threadCamera(ThreadWithStop):
         self._next_frame_t = now + 1 / self.frame_rate
         try:
             frame = self.camera.capture_array('lores')
+            # Capture-return approximation, before conversion/encoding; NOT sensor exposure.
+            t_capture_return_ns = time.monotonic_ns()
+            frame_id = self.frame_id
+            self.frame_id += 1  # Full queues may drop this ID; never reuse it in this session.
             frame = self.cv2.cvtColor(frame, self.cv2.COLOR_YUV2BGR_I420)
             ok, encoded = self.cv2.imencode('.jpg', frame)
             if not ok:
                 raise RuntimeError('JPEG encoding failed')
-            self.sender.send(base64.b64encode(encoded).decode('utf-8'), block=False)
+            packet = make_capture_packet(
+                self.session_id, frame_id, base64.b64encode(encoded).decode('utf-8'),
+                t_capture_return_ns, self.capture_latency_offset_ns,
+                t_publish_ns=time.monotonic_ns())
+            self.sender.send(packet, block=False)
         except Full:
             pass  # Drop a frame rather than accumulate a camera backlog.
         except Exception as exc:

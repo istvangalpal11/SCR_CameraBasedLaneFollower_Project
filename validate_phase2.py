@@ -8,6 +8,7 @@ from queue import Queue
 import subprocess
 import sys
 import time
+from src.utils.frame_packet import make_frame_packet
 import cv2
 import numpy as np
 
@@ -62,10 +63,11 @@ def validate_codec_and_lifecycle():
         calls.append(value)
         return codec._decode_b64_jpg_to_bgr(value)
     lane._decode_b64_jpg_to_bgr = decode
+    frame_counter = iter(range(1_000_000))
     def frame(value):
-        with lane._rx_lock:
-            lane._latest_b64 = value
-            lane._rx_count += 1
+        index = next(frame_counter)
+        lane._store_camera_packet(make_frame_packet(
+            'phase2-unit', index, index, value))
     def control(value):
         controls.value = {'enable': value}
         lane.state_change_handler()
@@ -157,32 +159,35 @@ def transport_child():
             assert process.ready_event.wait(5)
         assert registered.wait(5)
         camera = messageHandlerSender(queues, serialCamera)
+        frame_counter = iter(range(1_000_000))
+        def publish_frame(payload):
+            camera.send(make_frame_packet('phase2-transport', next(frame_counter), time.monotonic_ns(), payload))
         control = messageHandlerSender(queues, LaneControl)
         image, payload = test_image()
         ok, jpg = cv2.imencode('.jpg', image[:100])
         assert ok
         wrong = base64.b64encode(jpg).decode('ascii')
-        camera.send(wrong)  # Must not decode while initially disabled.
+        publish_frame(wrong)  # Must not decode while initially disabled.
         time.sleep(0.2)
         control.send({'enable': True})
         collect(True)
         time.sleep(0.2)  # No new frame yet: stale wrong-size image must be skipped.
         for _ in range(5):
-            camera.send(payload)
+            publish_frame(payload)
             time.sleep(0.05)
         for value in ('bad jpeg', 'bad jpeg', payload, 'bad jpeg', payload):
-            camera.send(value)
+            publish_frame(value)
             time.sleep(0.2)
             assert lane.is_alive() and gateway.is_alive()
             collect()
         control.send({'enable': False})
         collect(True)
-        camera.send(wrong)
+        publish_frame(wrong)
         time.sleep(0.2)
         control.send({'enable': True})
         collect(True)
         time.sleep(0.2)
-        camera.send(payload)
+        publish_frame(payload)
         time.sleep(0.2)
         control.send({'enable': False})
         collect(True)

@@ -31,7 +31,13 @@ from src.hardware.camera.threads.threadCamera import threadCamera
 
 
 class processCamera(WorkerProcess):
+    def __init__(self, queuesList, ready_event=None, capture_latency_offset_ns=0):
+        # Zero by default: set only after measuring capture-return latency on the Pi.
+        from src.utils.frame_packet import validate_capture_latency_offset
+        super().__init__(queuesList, ready_event)
+        self.capture_latency_offset_ns = validate_capture_latency_offset(capture_latency_offset_ns)
+
     def _init_threads(self):
-        self.threads.append(threadCamera(self.queuesList))
+        self.threads.append(threadCamera(self.queuesList, self.capture_latency_offset_ns))
 
 

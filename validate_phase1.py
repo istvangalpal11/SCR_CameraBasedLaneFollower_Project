@@ -5,6 +5,7 @@ import multiprocessing as mp
 from pathlib import Path
 from queue import Full
 import time
+from src.utils.frame_packet import make_frame_packet
 
 
 def validate():
@@ -76,9 +77,9 @@ def validate():
         assert registered.wait(5), 'Subscriptions not registered'
         camera = messageHandlerSender(queues, serialCamera)
         # Large encoded-frame stand-ins only test the pipe drain, not a camera.
-        for _ in range(30):
+        for frame_index in range(30):
             try:
-                camera.send('frame' * 20000, block=False)
+                camera.send(make_frame_packet('phase1', frame_index, frame_index, 'frame' * 20000), block=False)
             except Full:
                 pass
         control = messageHandlerSender(queues, LaneControl)

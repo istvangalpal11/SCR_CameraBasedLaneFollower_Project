@@ -33,7 +33,7 @@ class serialCamera(Enum):
     Queue = "General"
     Owner = "threadCamera"
     msgID = 2
-    msgType = "str"
+    msgType = "dict"
 
 
 class LaneControl(Enum):

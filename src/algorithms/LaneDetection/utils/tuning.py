@@ -1,9 +1,9 @@
 # Preprocessing constants copied from BFMC tuning.py; values unchanged.
 
-BEV_SRC_TOP_WIDTH_FACTOR            = 0.5    # Source trapezoid top width as image fraction
-BEV_SRC_BOTTOM_WIDTH_FACTOR         = 0.95   # Source trapezoid bottom width as image fraction
+BEV_SRC_TOP_WIDTH_FACTOR            = 0.14    # Source trapezoid top width as image fraction
+BEV_SRC_BOTTOM_WIDTH_FACTOR         = 1   # Source trapezoid bottom width as image fraction
 BEV_SRC_BOTTOM_OFFSET_FACTOR        = 0.0    # Source bottom inset as image-height fraction
-BEV_SRC_HORIZON_FACTOR              = 0.71   # Source top position as image-height fraction
+BEV_SRC_HORIZON_FACTOR              = 0.4   # Source top position as image-height fraction
 BEV_DST_EMPTY_MARGINS               = 0.00   # Destination side margin as output-width fraction
 
 BEV_OUTPUT_WIDTH = 400   # Production BEV destination width in pixels

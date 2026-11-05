@@ -27,6 +27,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE
 
 import threading
+import time
+from src.utils.frame_packet import (FramePacketOrder, FrameDecodeError, FrameShapeError,
+                                    preprocess_frame_packet, LatencyStatistics)
 import numpy as np
 from src.algorithms.LaneDetection.utils.img_codec import ImgCodecMixin
 from src.algorithms.LaneDetection.utils.preprocessing import PreprocessingMixin
@@ -47,7 +50,11 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
         self.laneActuationSender = messageHandlerSender(queuesList, LaneActuation)
         self._rx_lock = threading.Lock()
         self._rx_stop = threading.Event()
-        self._latest_b64 = None
+        self._latest_packet = None
+        self._packet_order = FramePacketOrder()
+        self._packet_error_active = False
+        self.latest_preprocessed_frame = None
+        self._timing_stats = LatencyStatistics()
         # Count of frames received from the camera, incremented in the RX thread.
         self._rx_count = 0
         self._last_processed_rx_count = -1
@@ -67,14 +74,37 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
                 if frame is None:
                     self._rx_stop.wait(0.001)
                     continue
-                with self._rx_lock:
-                    self._latest_b64 = frame
-                    self._rx_count += 1
+                if not self._store_camera_packet(frame, time.monotonic_ns()):
+                    continue
                 if first:
                     print('[LANE] First camera frame received', flush=True)
                     first = False
         except (OSError, EOFError) as exc:
             print(f'[LANE][ERROR] Camera receiver failed: {exc}', flush=True)
+
+    def _store_camera_packet(self, packet, t_received_ns=None):
+        """Validate and replace the entire latest packet atomically; never store fields separately."""
+        received = time.monotonic_ns() if t_received_ns is None else t_received_ns
+        try:
+            from src.utils.frame_packet import validate_frame_packet
+            packet = validate_frame_packet(packet)
+            if max(packet['t_capture_ns'], packet.get('t_publish_ns', 0)) > received:
+                raise ValueError('Live frame timestamp is ahead of the receiving monotonic clock')
+            with self._rx_lock:
+                packet = self._packet_order.accept(packet)
+                self._latest_packet = dict(packet, t_received_ns=received)
+                self._rx_count += 1
+            self._packet_error_active = False
+            return True
+        except ValueError as exc:
+            if not self._packet_error_active:
+                print(f'[LANE][ERROR] Invalid camera packet: {exc}', flush=True)
+            self._packet_error_active = True
+            return False
+
+    def latency_statistics(self):
+        with self._rx_lock:
+            return self._timing_stats.summary()
 
     def safe_stop(self):
         self.laneActuationSender.send({'steer': 0, 'speed': 0, 'valid': False})
@@ -102,47 +132,41 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
         if not self.lane_enabled:
             return
         with self._rx_lock:
-            b64 = self._latest_b64
+            packet = self._latest_packet
             rx_count = self._rx_count
-        if b64 is None or rx_count == self._last_processed_rx_count:
+        if packet is None or rx_count == self._last_processed_rx_count:
             return
         self._last_processed_rx_count = rx_count
-        frame_bgr = self._decode_b64_jpg_to_bgr(b64)
-        if frame_bgr is None:
+        try:
+            result = preprocess_frame_packet(packet, self, t_received_ns=packet['t_received_ns'])
+        except FrameDecodeError:
             if not self._decode_error_active:
                 print('[LANE][ERROR] Camera frame decode failed', flush=True)
             self._decode_error_active = True
             return
-        self._decode_error_active = False
-        if (not isinstance(frame_bgr, np.ndarray) or frame_bgr.ndim != 3
-                or frame_bgr.shape != (270, 512, 3)):
+        except FrameShapeError as exc:
+            self._decode_error_active = False
             if not self._shape_error_active:
-                print(f'[LANE][ERROR] Unexpected camera frame shape: '
-                      f'{getattr(frame_bgr, "shape", None)}, expected (270, 512, 3)', flush=True)
+                print(f'[LANE][ERROR] {exc}', flush=True)
             self._shape_error_active = True
             return
-        self._shape_error_active = False
-        if self._first_decoded_frame:
-            print('[LANE] First camera frame decoded successfully: 512x270 BGR', flush=True)
-            self._first_decoded_frame = False
-        try:
-            binary_bev = self.preprocess_frame_bgr(frame_bgr)
-            if (not isinstance(binary_bev, np.ndarray)
-                    or binary_bev.ndim != 2 or binary_bev.shape != (lane_tuning.BEV_OUTPUT_HEIGHT, lane_tuning.BEV_OUTPUT_WIDTH)
-                    or binary_bev.dtype != np.uint8
-                    or not np.all((binary_bev == 0) | (binary_bev == 1))):
-                raise ValueError(f'Expected a {lane_tuning.BEV_OUTPUT_HEIGHT}x{lane_tuning.BEV_OUTPUT_WIDTH} uint8 binary BEV with values 0/1')
         except Exception as exc:
             if not self._preprocessing_error_active:
                 print(f'[LANE][ERROR] Frame preprocessing failed: {exc}', flush=True)
             self._preprocessing_error_active = True
             return
-        self._preprocessing_error_active = False
+        self._decode_error_active = self._shape_error_active = self._preprocessing_error_active = False
+        with self._rx_lock:
+            self.latest_preprocessed_frame = result
+            self._timing_stats.add(result)
+        if self._first_decoded_frame:
+            print('[LANE] First camera frame decoded successfully: 512x270 BGR', flush=True)
+            self._first_decoded_frame = False
         if self._first_preprocessed_frame:
             print('[LANE] First frame preprocessing completed successfully: '
                   f'{lane_tuning.BEV_OUTPUT_WIDTH}x{lane_tuning.BEV_OUTPUT_HEIGHT} binary BEV', flush=True)
             self._first_preprocessed_frame = False
-        # Phase 3.1 ends at binary_bev. No lane search or actuation here.
+        # One latest BEV+metadata result only. No lane search or actuation here.
 
     def run(self):
         self._rx_thread.start()
@@ -155,3 +179,4 @@ class threadLaneDetection(ThreadWithStop, ImgCodecMixin, PreprocessingMixin):
             self.controlSubscriber.unsubscribe()
             self._rx_stop.set()
             self._rx_thread.join(timeout=1)
+            print(f'[LANE] Host-monotonic timing summary: {self.latency_statistics()}', flush=True)

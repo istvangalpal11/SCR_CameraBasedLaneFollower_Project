@@ -8,6 +8,8 @@ from pathlib import Path
 from queue import Queue
 import subprocess
 import sys
+import time
+from src.utils.frame_packet import make_frame_packet
 import cv2
 import numpy as np
 
@@ -242,10 +244,11 @@ def validate_failure_recovery():
     real_preprocess = lane.preprocess_frame_bgr
     def fail(frame):
         raise RuntimeError('injected preprocessing failure')
+    frame_counter = iter(range(1_000_000))
     def work():
-        with lane._rx_lock:
-            lane._latest_b64 = payload
-            lane._rx_count += 1
+        index = next(frame_counter)
+        lane._store_camera_packet(make_frame_packet(
+            'phase31', index, index, payload))
         lane.thread_work()
     logs = io.StringIO()
     try:
