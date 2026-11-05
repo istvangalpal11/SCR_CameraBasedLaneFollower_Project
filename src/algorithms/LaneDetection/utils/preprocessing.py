@@ -60,19 +60,20 @@ class PreprocessingMixin:
     def _apply_threshold_morphology(self, binary):
         binary = (np.asarray(binary) > 0).astype(np.uint8)
 
-        if bool(getattr(lane_tuning, "THRESH_OPEN_ENABLE", False)):
+        open_iter = int(getattr(lane_tuning, "THRESH_OPEN_ITER", 0))
+        if open_iter > 0:
             k_open_w = max(1, int(getattr(lane_tuning, "THRESH_OPEN_KERNEL_W", 3)))
             k_open_h = max(1, int(getattr(lane_tuning, "THRESH_OPEN_KERNEL_H", 3)))
-            open_iter = max(1, int(getattr(lane_tuning, "THRESH_OPEN_ITER", 1)))
             k_open = cv2.getStructuringElement(cv2.MORPH_RECT, (k_open_w, k_open_h))
             binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, k_open, iterations=open_iter)
             binary = (binary > 0).astype(np.uint8)
 
-        k_close_w = max(1, int(getattr(lane_tuning, "THRESH_CLOSE_KERNEL_W", 3)))
-        k_close_h = max(1, int(getattr(lane_tuning, "THRESH_CLOSE_KERNEL_H", 11)))
-        close_iter = max(1, int(getattr(lane_tuning, "THRESH_CLOSE_ITER", 1)))
-        k_close = cv2.getStructuringElement(cv2.MORPH_RECT, (k_close_w, k_close_h))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k_close, iterations=close_iter)
+        close_iter = int(getattr(lane_tuning, "THRESH_CLOSE_ITER", 0))
+        if close_iter > 0:
+            k_close_w = max(1, int(getattr(lane_tuning, "THRESH_CLOSE_KERNEL_W", 3)))
+            k_close_h = max(1, int(getattr(lane_tuning, "THRESH_CLOSE_KERNEL_H", 11)))
+            k_close = cv2.getStructuringElement(cv2.MORPH_RECT, (k_close_w, k_close_h))
+            binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, k_close, iterations=close_iter)
 
         return (binary > 0).astype(np.uint8)
 
