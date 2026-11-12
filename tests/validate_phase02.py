@@ -16,7 +16,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'notebooks'))
 from src.utils.frame_packet import (make_frame_packet, make_capture_packet, validate_frame_packet,
     validate_capture_latency_offset, FramePacketOrder, FrameDecodeError, FrameShapeError,

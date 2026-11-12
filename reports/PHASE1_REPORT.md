@@ -94,7 +94,7 @@ The General queue holds at most four waiting messages. Camera drops new frames i
 Run from `SCRbrain` with a working Python installation:
 
 ```text
-python validate_phase1.py
+python -m tests.validate_phase1
 python main.py
 ```
 

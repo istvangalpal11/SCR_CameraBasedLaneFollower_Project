@@ -210,15 +210,15 @@ def transport_child():
 
 
 def validate():
-    root = Path(__file__).parent
-    regression = subprocess.run([sys.executable, str(root / 'validate_phase1.py')],
-                                capture_output=True, text=True, timeout=30)
+    root = Path(__file__).resolve().parents[1]
+    regression = subprocess.run([sys.executable, '-m', 'tests.validate_phase1'],
+                                cwd=root, capture_output=True, text=True, timeout=30)
     print(regression.stdout, end='')
     assert regression.returncode == 0, regression.stderr
     print('PASS: Phase 1 regression validation', flush=True)
     validate_codec_and_lifecycle()
-    transport = subprocess.run([sys.executable, str(Path(__file__)), '--transport-child'],
-                               capture_output=True, text=True, timeout=30)
+    transport = subprocess.run([sys.executable, '-m', 'tests.validate_phase2', '--transport-child'],
+                               cwd=root, capture_output=True, text=True, timeout=30)
     print(transport.stdout, end='')
     assert transport.returncode == 0, transport.stderr
     assert transport.stdout.count('First camera frame decoded successfully: 512x270 BGR') == 1

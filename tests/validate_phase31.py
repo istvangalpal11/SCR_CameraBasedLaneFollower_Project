@@ -34,7 +34,7 @@ def assert_binary(binary):
 
 def reference_check(images):
     # Optional read-only comparison when the original repository is alongside SCR.
-    directory = Path(__file__).parent.parent / 'brain/src/algorithms/LaneDetection/utils'
+    directory = Path(__file__).resolve().parents[2] / 'brain/src/algorithms/LaneDetection/utils'
     if not (directory / 'preprocessing.py').exists():
         print('INFO: BFMC reference comparison skipped (reference not installed)', flush=True)
         return
@@ -278,10 +278,10 @@ def validate_failure_recovery():
 
 
 def validate():
-    root = Path(__file__).parent
+    root = Path(__file__).resolve().parents[1]
     # Phase 2 itself runs the unchanged Phase 1 validator.
-    regression = subprocess.run([sys.executable, str(root / 'validate_phase2.py')],
-                                capture_output=True, text=True, timeout=60)
+    regression = subprocess.run([sys.executable, '-m', 'tests.validate_phase2'],
+                                cwd=root, capture_output=True, text=True, timeout=60)
     print(regression.stdout, end='')
     assert regression.returncode == 0, regression.stderr
     assert 'PASS: Phase 1 regression validation' in regression.stdout
@@ -289,8 +289,8 @@ def validate():
     validate_preprocessing()
     validate_failure_recovery()
     # Reuse Phase 2's real-process transport test without editing that validator.
-    integration = subprocess.run([sys.executable, str(root / 'validate_phase2.py'), '--transport-child'],
-                                 capture_output=True, text=True, timeout=30)
+    integration = subprocess.run([sys.executable, '-m', 'tests.validate_phase2', '--transport-child'],
+                                 cwd=root, capture_output=True, text=True, timeout=30)
     print(integration.stdout, end='')
     assert integration.returncode == 0, integration.stderr
     assert integration.stdout.count('First frame preprocessing completed successfully') == 1

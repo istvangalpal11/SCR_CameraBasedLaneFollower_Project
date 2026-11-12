@@ -6,15 +6,15 @@ Created:
 
 - `src/algorithms/LaneDetection/utils/__init__.py`
 - `src/algorithms/LaneDetection/utils/img_codec.py`
-- `validate_phase2.py`
-- `PHASE2_REPORT.md`
+- `tests/validate_phase2.py`
+- `reports/PHASE2_REPORT.md`
 - `.gitignore` (Python caches and local validation dependencies)
 
 Modified:
 
 - `src/algorithms/LaneDetection/threads/threadLaneDetection.py`: adds `ImgCodecMixin`, receive counters, control handling in `state_change_handler()`, enabled-only decoding, shape checks, and quiet diagnostics.
 - `requirements.txt`: documents OpenCV/NumPy as both Camera and LaneDetection dependencies, Raspberry Pi system packages, and Windows validation setup.
-- `validate_phase1.py`: restricts its source scan to root project scripts and `src/`, excluding the local validation environment. All existing Phase 1 assertions remain intact.
+- `tests/validate_phase1.py`: restricts its source scan to root project scripts and `src/`, excluding the local validation environment. All existing Phase 1 assertions remain intact.
 
 The old `../brain` repository was read only. Camera, Gateway, SerialHandler, templates, message definitions and message handlers were not modified in Phase 2. No additional lane utilities were copied.
 
@@ -41,8 +41,8 @@ Decoded frames must be NumPy arrays with shape `(270, 512, 3)`. Invalid dimensio
 Run with Python, NumPy and OpenCV available:
 
 ```text
-python validate_phase1.py
-python validate_phase2.py
+python -m tests.validate_phase1
+python -m tests.validate_phase2
 ```
 
 Phase 2 also runs Phase 1 regression validation automatically. Both passed on Windows using multiprocessing `spawn`, Python 3.13, NumPy 2.5.3 and OpenCV 5.0.0.

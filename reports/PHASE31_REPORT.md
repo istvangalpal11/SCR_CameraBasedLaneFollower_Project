@@ -1,12 +1,12 @@
-﻿# Phase 3.1: BFMC image preprocessing
+# Phase 3.1: BFMC image preprocessing
 
 ## Files
 
 Created:
 - `src/algorithms/LaneDetection/utils/preprocessing.py`
 - `src/algorithms/LaneDetection/utils/tuning.py`
-- `validate_phase31.py`
-- `PHASE31_REPORT.md`
+- `tests/validate_phase31.py`
+- `reports/PHASE31_REPORT.md`
 
 Modified only `src/algorithms/LaneDetection/threads/threadLaneDetection.py` among existing source files. The original BFMC repository, both previous validators, Camera, Gateway, SerialHandler, message system, templates and requirements remain unchanged.
 
@@ -41,12 +41,12 @@ LaneControl and shutdown still publish only `{"steer": 0, "speed": 0, "valid": F
 Run from SCRbrain with Python, NumPy and OpenCV available:
 
 ```text
-python validate_phase1.py
-python validate_phase2.py
-python validate_phase31.py
+python -m tests.validate_phase1
+python -m tests.validate_phase2
+python -m tests.validate_phase31
 ```
 
-`validate_phase31.py` runs the unchanged Phase 2 validator, which in turn runs the unchanged Phase 1 validator. All passed on Windows using spawned processes and a project-local ignored validation environment (Python 3.13, NumPy 2.5.3, OpenCV 5.0.0).
+`tests/validate_phase31.py` runs the unchanged Phase 2 validator, which in turn runs the unchanged Phase 1 validator. All passed on Windows using spawned processes and a project-local ignored validation environment (Python 3.13, NumPy 2.5.3, OpenCV 5.0.0).
 
 Verified:
 - Source syntax/imports and all Phase 1/2 regression assertions.

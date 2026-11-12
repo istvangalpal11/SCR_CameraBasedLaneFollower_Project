@@ -9,8 +9,8 @@ from src.utils.frame_packet import make_frame_packet
 
 
 def validate():
-    root = Path(__file__).parent
-    for path in (*root.glob('*.py'), *(root / 'src').rglob('*.py')):
+    root = Path(__file__).resolve().parents[1]
+    for path in (*root.glob('*.py'), *(root / 'tests').glob('validate_*.py'), *(root / 'src').rglob('*.py')):
         source = path.read_text(encoding='utf-8-sig')
         compile(source, str(path), 'exec')
         tree = ast.parse(source)

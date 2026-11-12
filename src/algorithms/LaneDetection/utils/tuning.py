@@ -28,9 +28,9 @@ THRESH_OPEN_KERNEL_W               = 3      # Opening kernel width in pixels
 THRESH_OPEN_KERNEL_H               = 3      # Opening kernel height in pixels
 THRESH_OPEN_ITER                   = 0      # Opening iterations; zero skips operation
 
-THRESH_CLOSE_KERNEL_W              = 7      # Closing kernel width in pixels
-THRESH_CLOSE_KERNEL_H              = 35     # Closing kernel height in pixels
-THRESH_CLOSE_ITER                  = 0      # Closing iterations; zero skips operation
+THRESH_CLOSE_KERNEL_W              = 3      # Closing kernel width in pixels
+THRESH_CLOSE_KERNEL_H              = 5    # Closing kernel height in pixels
+THRESH_CLOSE_ITER                  = 4      # Closing iterations; zero skips operation
 
 BEV_BLACK_TRAPEZOID_ENABLE         = False  # Enable black vehicle-footprint mask in BEV
 BEV_BLACK_TRAPEZOID_CENTER_X_FRAC  = 0.50   # Mask center as image-width fraction

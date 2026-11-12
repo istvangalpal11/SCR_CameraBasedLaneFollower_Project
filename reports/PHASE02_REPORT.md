@@ -8,15 +8,15 @@ Created:
 - `src/utils/frame_packet.py`: plain-dict packet creation/validation, bounded session ordering, shared decode/preprocess orchestration, and bounded timing summaries.
 - `notebooks/helpers/frame_replay.py`: natural-order simulated image replay and recorded JSON/JSONL metadata replay; no preprocessing algorithm copies.
 - `notebooks/02_Lane_Perception_Development.ipynb`: separate development notebook, five-image demo, saved-image sequence configuration, metadata display, timing summary, and a nonimplemented next-phase placeholder.
-- `validate_phase02.py`: eight hardware-free tests covering requirements A–H, plus an explicitly labeled development-host timing sample.
-- `PHASE02_REPORT.md`: this report.
+- `tests/validate_phase02.py`: eight hardware-free tests covering requirements A–H, plus an explicitly labeled development-host timing sample.
+- `reports/PHASE02_REPORT.md`: this report.
 
 Modified:
 - `src/hardware/camera/threads/threadCamera.py`: per-session UUID, capture counter, capture-return timestamp before image conversion/encoding, optional latency subtraction, publish timestamp, dict publication.
 - `src/hardware/camera/processCamera.py`: forwards the optional, validated capture-latency offset to its thread.
 - `src/utils/messages/allMessages.py`: `serialCamera.msgType` changes from `str` to `dict`; Owner/msgID/queue stay unchanged.
 - `src/algorithms/LaneDetection/threads/threadLaneDetection.py`: validates/orders complete packets, atomically replaces the latest packet, retains the existing drain thread, and exposes the latest BEV with metadata and timing.
-- `validate_phase1.py`, `validate_phase2.py`, `validate_phase31.py`: update artificial camera fixtures to the dictionary packet contract. Existing assertions are retained. Rapid unit injections use deterministic `replay_synthetic` timestamps instead of this Windows clock's repeated coarse ticks.
+- `tests/validate_phase1.py`, `tests/validate_phase2.py`, `tests/validate_phase31.py`: update artificial camera fixtures to the dictionary packet contract. Existing assertions are retained. Rapid unit injections use deterministic `replay_synthetic` timestamps instead of this Windows clock's repeated coarse ticks.
 
 Not modified: production preprocessing/tuning, the completed `phase31_preprocessing.ipynb`, Gateway, sender/subscriber helpers, serial/control code, templates, main or dependencies. The optional architecture v1.1 document was not found in the inspected project location.
 
@@ -72,7 +72,7 @@ No complete recorder, sensor synchronization or timestamp conversion between clo
 
 ## Validation results
 
-`validate_phase02.py`: **all eight tests passed**.
+`tests/validate_phase02.py`: **all eight tests passed**.
 
 - Required packet fields/types, image decode, validated offset and actual camera-thread capture/clock/encode call order under mocks.
 - Unique camera sessions, frame-ID gaps after queue drops, duplicate/out-of-order/malformed rejection and restart acceptance at frame ID zero.
@@ -83,9 +83,9 @@ No complete recorder, sensor synchronization or timestamp conversion between clo
 - Real Gateway process plus real LaneDetection thread verifies queue/pipe transport, safe start/stop and normal shutdown.
 - Phase 0.1 still has no enable flag and both zero iteration defaults genuinely skip morphology.
 
-`validate_phase2.py`: **passed**, including its Phase 1 regression chain and spawned Gateway/LaneDetection process transport test. No regression assertions were removed.
+`tests/validate_phase2.py`: **passed**, including its Phase 1 regression chain and spawned Gateway/LaneDetection process transport test. No regression assertions were removed.
 
-`validate_phase31.py`: its Phase 1/2 chain and regional-threshold checks passed, then it hit the **pre-existing** historical BFMC `THRESH_TOPHAT_BLUR_K` comparison failure. That unrelated assertion and accepted tuning were not changed. It is not claimed as a fully passing validator.
+`tests/validate_phase31.py`: its Phase 1/2 chain and regional-threshold checks passed, then it hit the **pre-existing** historical BFMC `THRESH_TOPHAT_BLUR_K` comparison failure. That unrelated assertion and accepted tuning were not changed. It is not claimed as a fully passing validator.
 
 The new notebook's Python cells were executed headlessly in demo and recorded modes. Metadata, simulated progression, recorded IDs/times, binary BEV output and insufficient-sample reporting passed. Hash checks confirmed protected production preprocessing/tuning, Phase 0.1, old notebook, Gateway and message helpers remain byte-identical. Notebook magics were retained; headless checking executed Python cell contents without IPython directives.
 
